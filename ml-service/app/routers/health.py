@@ -1,8 +1,11 @@
 import importlib.util
+from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app import __version__
+from app.config import Settings, get_settings
 
 router = APIRouter(tags=["health"])
 
@@ -12,9 +15,10 @@ def _installed(module: str) -> bool:
 
 
 @router.get("/health")
-def health() -> dict:
+def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict:
     # Capabilities tell the backend which pipelines this instance can serve, e.g. a
-    # host where only requirements.txt was installed reports mediapipe/opencv False.
+    # host without the face model reports faceLandmarker False (proctoring degrades
+    # to browser-only signals).
     return {
         "status": "ok",
         "service": "lms-ml-service",
@@ -23,5 +27,6 @@ def health() -> dict:
             "mediapipe": _installed("mediapipe"),
             "opencv": _installed("cv2"),
             "sklearn": _installed("sklearn"),
+            "faceLandmarker": Path(settings.face_model_path).exists(),
         },
     }

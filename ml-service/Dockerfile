@@ -6,6 +6,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2
 WORKDIR /srv/app
 COPY requirements.txt requirements-cv.txt ./
 RUN pip install -r requirements.txt -r requirements-cv.txt
+# Face model for proctoring (~3.6 MB, Google's official MediaPipe model storage).
+COPY app ./app
+RUN python -m app.proctoring.download_model
 
 FROM base AS dev
 COPY . .

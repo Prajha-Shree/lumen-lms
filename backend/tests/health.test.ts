@@ -39,8 +39,14 @@ describe('health endpoints', () => {
   });
 
   it('unknown routes return a structured 404', async () => {
-    const res = await request(createApp({ healthProbes: {} })).get('/api/nope');
+    const res = await request(createApp({ healthProbes: {} })).get('/nope');
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('API routes require authentication before revealing whether they exist', async () => {
+    const res = await request(createApp({ healthProbes: {} })).get('/api/nope');
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHENTICATED');
   });
 });

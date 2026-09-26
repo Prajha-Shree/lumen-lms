@@ -30,10 +30,9 @@ export function SystemStatusPage() {
   const allUp = data && services.every((s) => (data[s.key] as DependencyStatus | undefined)?.status === 'up');
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:py-16">
+    <div className="max-w-5xl">
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mb-8 space-y-3">
-        <Badge tone="primary">Phase 1 · Scaffolding</Badge>
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">System status</h1>
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">System status</h1>
         <p className="max-w-2xl text-fg-muted">
           Live health of every service in the stack, polled every 5 seconds through the backend.
         </p>

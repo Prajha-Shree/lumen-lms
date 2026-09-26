@@ -23,6 +23,12 @@ coverage/
 .DS_Store
 Thumbs.db
 
+# User uploads (local storage driver)
+uploads/
+
+# Downloaded ML model files
+ml-service/models/
+
 # Logs
 *.log
 npm-debug.log*

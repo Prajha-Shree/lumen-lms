@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from app import __version__
-from app.routers import health
+from app.routers import cognitive, health, proctoring, recommendations
 
 
 def create_app() -> FastAPI:
@@ -11,6 +11,9 @@ def create_app() -> FastAPI:
         description="Cognitive profiling, adaptive recommendations, and proctoring inference.",
     )
     app.include_router(health.router)
+    app.include_router(cognitive.router)
+    app.include_router(recommendations.router)
+    app.include_router(proctoring.router)
     return app
 
 

@@ -16,6 +16,10 @@ const EnvSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(32),
 
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
+
+  /** Local-disk storage root for lesson attachments (swap the driver for S3/Blob in cloud). */
+  UPLOAD_DIR: z.string().default('./uploads'),
+  MAX_UPLOAD_MB: z.coerce.number().positive().default(20),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

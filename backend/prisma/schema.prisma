@@ -1,4 +1,9 @@
-// Prisma schema. Models are added in Phase 2 (schema & multi-tenancy).
+// Prisma schema for the adaptive multi-tenant LMS.
+//
+// Tenancy: every table except `tenants` carries `tenant_id`, and Postgres Row-Level
+// Security (see migrations/*_rls) restricts every row to the tenant set in the
+// `app.tenant_id` session variable. Always query through `withTenant()` /
+// `withSystem()` in src/lib/db.ts, never through the bare client.
 
 generator client {
   provider = "prisma-client-js"
@@ -10,4 +15,695 @@ datasource db {
   url       = env("DATABASE_URL")
   // Migrations: owner role, so DDL and RLS policy creation work.
   directUrl = env("DIRECT_DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  INSTITUTION_ADMIN
+  INSTRUCTOR
+  STUDENT
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum LessonFormat {
+  READING
+  VIDEO
+  INTERACTIVE
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  DROPPED
+}
+
+enum ProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum AssessmentStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+enum ExamStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+}
+
+enum ExamSessionStatus {
+  IN_PROGRESS
+  SUBMITTED
+  EXPIRED
+}
+
+enum ReviewStatus {
+  NOT_REQUIRED
+  PENDING
+  REVIEWED_NO_CONCERN
+  REVIEWED_CONCERN
+}
+
+enum ProctoringEventType {
+  NO_FACE
+  MULTIPLE_FACES
+  LOOKING_AWAY
+  TAB_HIDDEN
+  WINDOW_BLUR
+  FULLSCREEN_EXIT
+  CAMERA_UNAVAILABLE
+  COPY_PASTE
+}
+
+enum EventSource {
+  CAMERA
+  BROWSER
+}
+
+enum ActivityType {
+  LOGIN
+  LESSON_VIEW
+  LESSON_COMPLETE
+  EXAM_SUBMIT
+  ASSESSMENT_COMPLETE
+  FORUM_POST
+  ASSIGNMENT_SUBMIT
+}
+
+enum SubmissionStatus {
+  SUBMITTED
+  GRADED
+}
+
+enum SnapshotScope {
+  TENANT
+  COURSE
+}
+
+// ─── Tenancy & identity ──────────────────────────────────────────────────────
+
+model Tenant {
+  id        String       @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String       @unique
+  status    TenantStatus @default(ACTIVE)
+  /// Branding + policy knobs, e.g. { primaryColor, proctoringRetentionDays }.
+  settings  Json         @default("{}")
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  users                User[]
+  refreshTokens        RefreshToken[]
+  courses              Course[]
+  modules              Module[]
+  lessons              Lesson[]
+  lessonAttachments    LessonAttachment[]
+  enrollments          Enrollment[]
+  lessonProgress       LessonProgress[]
+  cognitiveAssessments CognitiveAssessment[]
+  cognitiveProfiles    CognitiveProfile[]
+  exams                Exam[]
+  examQuestions        ExamQuestion[]
+  examSessions         ExamSession[]
+  proctoringEvents     ProctoringEvent[]
+  activities           LearningActivity[]
+  badges               UserBadge[]
+  notifications        Notification[]
+  recommendations      Recommendation[]
+  forumThreads         ForumThread[]
+  forumPosts           ForumPost[]
+  assignments          Assignment[]
+  submissions          Submission[]
+  analyticsSnapshots   AnalyticsSnapshot[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  /// Always stored lower-cased.
+  email        String
+  name         String
+  passwordHash String    @map("password_hash")
+  role         Role
+  isActive     Boolean   @default(true) @map("is_active")
+  xp           Int       @default(0)
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  refreshTokens        RefreshToken[]
+  taughtCourses        Course[]              @relation("CourseInstructor")
+  enrollments          Enrollment[]
+  lessonProgress       LessonProgress[]
+  uploads              LessonAttachment[]
+  cognitiveAssessments CognitiveAssessment[]
+  cognitiveProfile     CognitiveProfile?
+  examSessions         ExamSession[]         @relation("SessionTaker")
+  reviewedSessions     ExamSession[]         @relation("SessionReviewer")
+  activities           LearningActivity[]
+  badges               UserBadge[]
+  notifications        Notification[]
+  recommendations      Recommendation[]
+  forumThreads         ForumThread[]
+  forumPosts           ForumPost[]
+  submissions          Submission[]          @relation("SubmissionStudent")
+  gradedSubmissions    Submission[]          @relation("SubmissionGrader")
+
+  @@unique([tenantId, email])
+  @@index([tenantId, role])
+  @@map("users")
+}
+
+/// One row per issued refresh token (id = JWT `jti`). Rotation marks the old row
+/// revoked and links it to its replacement; re-use of a revoked token revokes the
+/// whole family (stolen-token detection).
+model RefreshToken {
+  id           String    @id @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  familyId     String    @map("family_id") @db.Uuid
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  userAgent    String?   @map("user_agent")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+// ─── Courses & content ───────────────────────────────────────────────────────
+
+model Course {
+  id           String       @id @default(uuid()) @db.Uuid
+  tenantId     String       @map("tenant_id") @db.Uuid
+  instructorId String       @map("instructor_id") @db.Uuid
+  title        String
+  description  String       @default("")
+  level        CourseLevel  @default(BEGINNER)
+  status       CourseStatus @default(DRAFT)
+  tags         String[]     @default([])
+  /// Design-token name for the course card accent (e.g. "indigo", "emerald").
+  accent       String       @default("indigo")
+  publishedAt  DateTime?    @map("published_at")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  instructor      User                @relation("CourseInstructor", fields: [instructorId], references: [id])
+  modules         Module[]
+  lessons         Lesson[]
+  enrollments     Enrollment[]
+  lessonProgress  LessonProgress[]
+  exams           Exam[]
+  forumThreads    ForumThread[]
+  assignments     Assignment[]
+  recommendations Recommendation[]
+  activities      LearningActivity[]
+
+  @@index([tenantId, status])
+  @@index([instructorId])
+  @@map("courses")
+}
+
+model Module {
+  id          String @id @default(uuid()) @db.Uuid
+  tenantId    String @map("tenant_id") @db.Uuid
+  courseId    String @map("course_id") @db.Uuid
+  title       String
+  description String @default("")
+  position    Int
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
+
+  @@index([courseId, position])
+  @@map("modules")
+}
+
+model Lesson {
+  id              String       @id @default(uuid()) @db.Uuid
+  tenantId        String       @map("tenant_id") @db.Uuid
+  courseId        String       @map("course_id") @db.Uuid
+  moduleId        String       @map("module_id") @db.Uuid
+  title           String
+  summary         String       @default("")
+  format          LessonFormat @default(READING)
+  /// Markdown body.
+  content         String       @default("")
+  videoUrl        String?      @map("video_url")
+  durationMinutes Int          @default(10) @map("duration_minutes")
+  /// 1 (intro) .. 5 (advanced). Used by the recommender's difficulty matching.
+  difficulty      Int          @default(2)
+  /// Concept tags; shared vocabulary with exam questions and cognitive profiles.
+  topics          String[]     @default([])
+  position        Int
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  tenant          Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  course          Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  module          Module             @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  attachments     LessonAttachment[]
+  progress        LessonProgress[]
+  recommendations Recommendation[]
+
+  @@index([moduleId, position])
+  @@index([courseId])
+  @@map("lessons")
+}
+
+model LessonAttachment {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  lessonId     String   @map("lesson_id") @db.Uuid
+  uploadedById String   @map("uploaded_by_id") @db.Uuid
+  fileName     String   @map("file_name")
+  mimeType     String   @map("mime_type")
+  sizeBytes    Int      @map("size_bytes")
+  /// Opaque key for the storage driver (local disk now, S3/Blob later).
+  storageKey   String   @map("storage_key")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lesson     Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  uploadedBy User   @relation(fields: [uploadedById], references: [id])
+
+  @@index([lessonId])
+  @@map("lesson_attachments")
+}
+
+model Enrollment {
+  id          String           @id @default(uuid()) @db.Uuid
+  tenantId    String           @map("tenant_id") @db.Uuid
+  courseId    String           @map("course_id") @db.Uuid
+  userId      String           @map("user_id") @db.Uuid
+  status      EnrollmentStatus @default(ACTIVE)
+  enrolledAt  DateTime         @default(now()) @map("enrolled_at")
+  completedAt DateTime?        @map("completed_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, userId])
+  @@index([userId])
+  @@map("enrollments")
+}
+
+model LessonProgress {
+  id               String         @id @default(uuid()) @db.Uuid
+  tenantId         String         @map("tenant_id") @db.Uuid
+  userId           String         @map("user_id") @db.Uuid
+  lessonId         String         @map("lesson_id") @db.Uuid
+  courseId         String         @map("course_id") @db.Uuid
+  status           ProgressStatus @default(IN_PROGRESS)
+  timeSpentSeconds Int            @default(0) @map("time_spent_seconds")
+  firstViewedAt    DateTime       @default(now()) @map("first_viewed_at")
+  lastViewedAt     DateTime       @default(now()) @map("last_viewed_at")
+  completedAt      DateTime?      @map("completed_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([courseId, status])
+  @@map("lesson_progress")
+}
+
+// ─── Cognitive profiling ─────────────────────────────────────────────────────
+
+model CognitiveAssessment {
+  id          String           @id @default(uuid()) @db.Uuid
+  tenantId    String           @map("tenant_id") @db.Uuid
+  userId      String           @map("user_id") @db.Uuid
+  status      AssessmentStatus @default(IN_PROGRESS)
+  /// Ordered list of { itemId, answer, responseTimeMs, confidence }.
+  responses   Json             @default("[]")
+  startedAt   DateTime         @default(now()) @map("started_at")
+  completedAt DateTime?        @map("completed_at")
+
+  tenant  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile CognitiveProfile?
+
+  @@index([userId, status])
+  @@map("cognitive_assessments")
+}
+
+/// A learner's current profile. Framed as preferences + current strengths, never
+/// fixed traits; the student can view, reset and retake it (see docs/architecture.md).
+model CognitiveProfile {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  userId          String   @unique @map("user_id") @db.Uuid
+  assessmentId    String?  @unique @map("assessment_id") @db.Uuid
+  version         Int      @default(1)
+  /// Preference weights summing to 1, e.g. { reading: .5, video: .3, interactive: .2 }.
+  modality        Json
+  /// "steady" | "balanced" | "accelerated"
+  pace            String
+  /// 0..1, normalized response speed on reasoning items.
+  processingSpeed Float    @map("processing_speed")
+  /// -1..1: positive = under-confident, negative = over-confident, 0 = well calibrated.
+  calibration     Float
+  /// { topic: 0..1 } estimated mastery from the diagnostic items.
+  topicMastery    Json     @map("topic_mastery")
+  strengths       String[] @default([])
+  growthAreas     String[] @default([]) @map("growth_areas")
+  summary         String   @default("")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessment CognitiveAssessment? @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
+
+  @@map("cognitive_profiles")
+}
+
+// ─── Exams & proctoring ──────────────────────────────────────────────────────
+
+model Exam {
+  id              String     @id @default(uuid()) @db.Uuid
+  tenantId        String     @map("tenant_id") @db.Uuid
+  courseId        String     @map("course_id") @db.Uuid
+  title           String
+  description     String     @default("")
+  durationMinutes Int        @default(30) @map("duration_minutes")
+  /// Percentage 0..100.
+  passingScore    Int        @default(60) @map("passing_score")
+  proctored       Boolean    @default(true)
+  maxAttempts     Int        @default(1) @map("max_attempts")
+  status          ExamStatus @default(DRAFT)
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  course    Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  questions ExamQuestion[]
+  sessions  ExamSession[]
+
+  @@index([courseId])
+  @@map("exams")
+}
+
+model ExamQuestion {
+  id               String       @id @default(uuid()) @db.Uuid
+  tenantId         String       @map("tenant_id") @db.Uuid
+  examId           String       @map("exam_id") @db.Uuid
+  type             QuestionType @default(SINGLE_CHOICE)
+  prompt           String
+  /// [{ id: "a", text: "..." }]
+  options          Json
+  correctOptionIds String[]     @map("correct_option_ids")
+  explanation      String?
+  points           Int          @default(1)
+  topic            String
+  difficulty       Int          @default(2)
+  position         Int
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  exam   Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@index([examId, position])
+  @@map("exam_questions")
+}
+
+/// One attempt at an exam.
+model ExamSession {
+  id             String            @id @default(uuid()) @db.Uuid
+  tenantId       String            @map("tenant_id") @db.Uuid
+  examId         String            @map("exam_id") @db.Uuid
+  userId         String            @map("user_id") @db.Uuid
+  status         ExamSessionStatus @default(IN_PROGRESS)
+  proctored      Boolean
+  consentGivenAt DateTime?         @map("consent_given_at")
+  startedAt      DateTime          @default(now()) @map("started_at")
+  expiresAt      DateTime          @map("expires_at")
+  submittedAt    DateTime?         @map("submitted_at")
+  /// { questionId: optionId[] }
+  answers        Json              @default("{}")
+  score          Float?
+  maxScore       Float?            @map("max_score")
+  percent        Float?
+  /// { topic: 0..1 } per-topic correctness, feeds the recommender.
+  topicScores    Json?             @map("topic_scores")
+  reviewStatus   ReviewStatus      @default(NOT_REQUIRED) @map("review_status")
+  reviewerId     String?           @map("reviewer_id") @db.Uuid
+  reviewNote     String?           @map("review_note")
+  reviewedAt     DateTime?         @map("reviewed_at")
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  exam     Exam              @relation(fields: [examId], references: [id], onDelete: Cascade)
+  user     User              @relation("SessionTaker", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer User?             @relation("SessionReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  events   ProctoringEvent[]
+
+  @@index([examId, status])
+  @@index([userId])
+  @@map("exam_sessions")
+}
+
+/// Structured proctoring signal. No images or video are ever stored (ADR-2).
+model ProctoringEvent {
+  id         String              @id @default(uuid()) @db.Uuid
+  tenantId   String              @map("tenant_id") @db.Uuid
+  sessionId  String              @map("session_id") @db.Uuid
+  type       ProctoringEventType
+  source     EventSource
+  startedAt  DateTime            @map("started_at")
+  endedAt    DateTime?           @map("ended_at")
+  durationMs Int?                @map("duration_ms")
+  /// Model confidence 0..1 for camera events; null for browser events.
+  confidence Float?
+  details    Json?
+  createdAt  DateTime            @default(now()) @map("created_at")
+
+  tenant  Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  session ExamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, startedAt])
+  @@map("proctoring_events")
+}
+
+// ─── Engagement, gamification, notifications ─────────────────────────────────
+
+/// Append-only activity stream: powers streaks, XP, engagement heatmaps and DAU.
+model LearningActivity {
+  id         String       @id @default(uuid()) @db.Uuid
+  tenantId   String       @map("tenant_id") @db.Uuid
+  userId     String       @map("user_id") @db.Uuid
+  courseId   String?      @map("course_id") @db.Uuid
+  type       ActivityType
+  xp         Int          @default(0)
+  metadata   Json?
+  occurredAt DateTime     @default(now()) @map("occurred_at")
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, occurredAt])
+  @@index([userId, occurredAt])
+  @@index([courseId, occurredAt])
+  @@map("learning_activities")
+}
+
+model UserBadge {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  badge     String
+  awardedAt DateTime @default(now()) @map("awarded_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badge])
+  @@map("user_badges")
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  type      String
+  title     String
+  body      String    @default("")
+  link      String?
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+/// Log of what the recommender suggested, and whether it was followed. This is the
+/// training data for a future learned ranking model.
+model Recommendation {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  courseId  String    @map("course_id") @db.Uuid
+  lessonId  String    @map("lesson_id") @db.Uuid
+  score     Float
+  reasons   String[]  @default([])
+  strategy  String
+  createdAt DateTime  @default(now()) @map("created_at")
+  clickedAt DateTime? @map("clicked_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("recommendations")
+}
+
+// ─── Discussion forum ────────────────────────────────────────────────────────
+
+model ForumThread {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  courseId       String   @map("course_id") @db.Uuid
+  authorId       String   @map("author_id") @db.Uuid
+  title          String
+  body           String
+  pinned         Boolean  @default(false)
+  resolved       Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+  lastActivityAt DateTime @default(now()) @map("last_activity_at")
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  course Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  author User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  posts  ForumPost[]
+
+  @@index([courseId, lastActivityAt])
+  @@map("forum_threads")
+}
+
+model ForumPost {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  threadId  String   @map("thread_id") @db.Uuid
+  authorId  String   @map("author_id") @db.Uuid
+  body      String
+  isAnswer  Boolean  @default(false) @map("is_answer")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  thread ForumThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  author User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@map("forum_posts")
+}
+
+// ─── Assignments & rubric grading ────────────────────────────────────────────
+
+model Assignment {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  courseId    String    @map("course_id") @db.Uuid
+  title       String
+  description String    @default("")
+  dueAt       DateTime? @map("due_at")
+  /// [{ id, title, description, levels: [{ points, label, description }] }]
+  rubric      Json
+  maxPoints   Int       @map("max_points")
+  published   Boolean   @default(true)
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  course      Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  submissions Submission[]
+
+  @@index([courseId])
+  @@map("assignments")
+}
+
+model Submission {
+  id           String           @id @default(uuid()) @db.Uuid
+  tenantId     String           @map("tenant_id") @db.Uuid
+  assignmentId String           @map("assignment_id") @db.Uuid
+  userId       String           @map("user_id") @db.Uuid
+  content      String
+  status       SubmissionStatus @default(SUBMITTED)
+  submittedAt  DateTime         @default(now()) @map("submitted_at")
+  /// { criterionId: points }
+  grades       Json?
+  score        Float?
+  feedback     String?
+  gradedById   String?          @map("graded_by_id") @db.Uuid
+  gradedAt     DateTime?        @map("graded_at")
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  user       User       @relation("SubmissionStudent", fields: [userId], references: [id], onDelete: Cascade)
+  gradedBy   User?      @relation("SubmissionGrader", fields: [gradedById], references: [id], onDelete: SetNull)
+
+  @@unique([assignmentId, userId])
+  @@map("submissions")
+}
+
+// ─── Analytics ───────────────────────────────────────────────────────────────
+
+/// Daily pre-aggregated metrics written by the analytics job, so trend charts don't
+/// scan the raw activity table.
+model AnalyticsSnapshot {
+  id        String        @id @default(uuid()) @db.Uuid
+  tenantId  String        @map("tenant_id") @db.Uuid
+  scope     SnapshotScope
+  scopeId   String        @map("scope_id") @db.Uuid
+  date      DateTime      @db.Date
+  metrics   Json
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, scope, scopeId, date])
+  @@map("analytics_snapshots")
 }

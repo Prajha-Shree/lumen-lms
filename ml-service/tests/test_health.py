@@ -24,7 +24,7 @@ def test_health_reports_capabilities():
     assert res.status_code == 200
     body = res.json()
     assert body["status"] == "ok"
-    assert set(body["capabilities"]) == {"mediapipe", "opencv", "sklearn"}
+    assert set(body["capabilities"]) == {"mediapipe", "opencv", "sklearn", "faceLandmarker"}
 
 
 def test_internal_token_required():

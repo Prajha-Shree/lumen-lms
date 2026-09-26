@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/inter';
+@plugin '@tailwindcss/typography';
 
 /* Dark mode is class-driven (set in index.html before paint, toggled by useTheme). */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -32,6 +33,27 @@
   --info-soft: oklch(0.95 0.03 240);
 
   --ring: oklch(0.52 0.2 277 / 0.45);
+
+  /* Data-viz tokens: validated categorical order (never cycled), one-hue sequential
+     ramp, recessive chrome. Dark mode uses its own stepped values below. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
+  --seq-100: #cde2fb;
+  --seq-250: #86b6ef;
+  --seq-400: #3987e5;
+  --seq-550: #1c5cab;
+  --seq-700: #0d366b;
+  --diverge-neg: #e34948;
+  --diverge-mid: #f0efec;
+  --diverge-pos: #2a78d6;
+  --chart-grid: #e1e0d9;
+  --chart-axis: #898781;
   color-scheme: light;
 }
 
@@ -58,6 +80,25 @@
   --info-soft: oklch(0.3 0.06 240);
 
   --ring: oklch(0.7 0.16 277 / 0.5);
+
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --seq-100: #184f95;
+  --seq-250: #1c5cab;
+  --seq-400: #3987e5;
+  --seq-550: #86b6ef;
+  --seq-700: #cde2fb;
+  --diverge-neg: #e66767;
+  --diverge-mid: #383835;
+  --diverge-pos: #3987e5;
+  --chart-grid: #2c2c2a;
+  --chart-axis: #898781;
   color-scheme: dark;
 }
 
@@ -107,6 +148,27 @@
   :focus-visible {
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-bg;
   }
+}
+
+/* Long-form lesson content: typography plugin, re-pointed at our tokens so it follows
+   light/dark automatically. */
+.prose-lms {
+  --tw-prose-body: var(--fg);
+  --tw-prose-headings: var(--fg);
+  --tw-prose-lead: var(--fg-muted);
+  --tw-prose-links: var(--primary);
+  --tw-prose-bold: var(--fg);
+  --tw-prose-counters: var(--fg-muted);
+  --tw-prose-bullets: var(--border);
+  --tw-prose-hr: var(--border);
+  --tw-prose-quotes: var(--fg);
+  --tw-prose-quote-borders: var(--primary);
+  --tw-prose-captions: var(--fg-muted);
+  --tw-prose-code: var(--fg);
+  --tw-prose-pre-code: var(--fg);
+  --tw-prose-pre-bg: var(--surface-2);
+  --tw-prose-th-borders: var(--border);
+  --tw-prose-td-borders: var(--border);
 }
 
 @media (prefers-reduced-motion: reduce) {

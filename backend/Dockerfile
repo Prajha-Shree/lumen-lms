@@ -15,8 +15,9 @@ RUN npx prisma generate
 FROM deps AS dev
 COPY . .
 EXPOSE 4000
-# Regenerate the client on start so schema edits on the host are picked up.
-CMD ["sh", "-c", "npx prisma generate && npm run dev"]
+# Regenerate the client (picks up host schema edits), apply migrations, seed demo
+# data if absent (idempotent), then start the watcher.
+CMD ["sh", "-c", "npx prisma generate && npx prisma migrate deploy && npm run db:seed && npm run dev"]
 
 # ---- build ----
 FROM deps AS build

@@ -16,7 +16,7 @@
     {
       "name": "ml-service",
       "runtimeExecutable": "ml-service/.venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--app-dir", "ml-service", "--port", "8000"],
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--app-dir", "ml-service", "--port", "8000", "--reload", "--reload-dir", "ml-service/app"],
       "port": 8000
     }
   ]
