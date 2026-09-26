@@ -1,0 +1,6 @@
+# Computer-vision + ML stack. No deep-learning framework in v1; a PyTorch model can
+# plug into the recommender later behind the same interface.
+# MediaPipe 1.x (Tasks API) pulls in opencv-contrib-python itself; don't add a second
+# OpenCV package (e.g. opencv-python-headless) or the two `cv2` modules will clash.
+mediapipe>=1.0,<2
+scikit-learn>=1.5,<2

@@ -1,0 +1,10 @@
+# Core API. Installs on any Python >= 3.11 (including 3.14 for local dev).
+fastapi>=0.115,<1
+uvicorn[standard]>=0.32,<1
+pydantic>=2.9,<3
+pydantic-settings>=2.6,<3
+numpy>=2.0,<3
+
+# Tests
+pytest>=8.3,<9
+httpx>=0.28,<1

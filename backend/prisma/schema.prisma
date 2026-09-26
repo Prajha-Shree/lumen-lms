@@ -1,0 +1,13 @@
+// Prisma schema. Models are added in Phase 2 (schema & multi-tenancy).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Runtime: least-privilege `lms_app` role, subject to Row-Level Security.
+  url       = env("DATABASE_URL")
+  // Migrations: owner role, so DDL and RLS policy creation work.
+  directUrl = env("DIRECT_DATABASE_URL")
+}

@@ -1,0 +1,95 @@
+name: adaptive-lms
+
+x-dev-watch: &dev-watch
+  # Bind mounts from a Windows host don't deliver inotify events to Linux
+  # containers, so file watchers fall back to polling.
+  CHOKIDAR_USEPOLLING: "true"
+  WATCHPACK_POLLING: "true"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lms_owner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lms_owner_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-lms}
+      APP_DB_USER: ${APP_DB_USER:-lms_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-lms_app_dev_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ml-service:
+    build:
+      context: ./ml-service
+      target: dev
+    environment:
+      ML_ENV: development
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-change-me-internal-token}
+    ports:
+      - "${ML_SERVICE_PORT:-8000}:8000"
+    volumes:
+      - ./ml-service/app:/srv/app/app
+      - ./ml-service/tests:/srv/app/tests
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  backend:
+    build:
+      context: ./backend
+      target: dev
+    environment:
+      <<: *dev-watch
+      NODE_ENV: development
+      PORT: 4000
+      # Runtime connection: least-privilege role, subject to RLS.
+      DATABASE_URL: postgresql://${APP_DB_USER:-lms_app}:${APP_DB_PASSWORD:-lms_app_dev_password}@postgres:5432/${POSTGRES_DB:-lms}
+      # Migration connection: owner role (Prisma `directUrl`).
+      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-lms_owner}:${POSTGRES_PASSWORD:-lms_owner_dev_password}@postgres:5432/${POSTGRES_DB:-lms}
+      ML_SERVICE_URL: http://ml-service:8000
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-change-me-internal-token}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change-me-access-secret-at-least-32-chars}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-refresh-secret-at-least-32-chars}
+      CORS_ORIGIN: http://localhost:${FRONTEND_PORT:-5173}
+    ports:
+      - "${BACKEND_PORT:-4000}:4000"
+    volumes:
+      - ./backend/src:/srv/app/src
+      - ./backend/prisma:/srv/app/prisma
+      - ./backend/tests:/srv/app/tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml-service:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    environment:
+      <<: *dev-watch
+      VITE_USE_POLLING: "true"
+      BACKEND_PROXY_TARGET: http://backend:4000
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend/src:/srv/app/src
+      - ./frontend/public:/srv/app/public
+      - ./frontend/index.html:/srv/app/index.html
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

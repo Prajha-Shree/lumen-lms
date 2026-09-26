@@ -1,0 +1,117 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+/* Dark mode is class-driven (set in index.html before paint, toggled by useTheme). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens. Components use ONLY these semantic names (bg-surface, text-fg-muted,
+ * border-border, bg-primary...), never raw palette colors, so light/dark and future
+ * per-tenant branding are a variable swap, not a component rewrite.
+ */
+:root {
+  --bg: oklch(0.985 0.004 275);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.965 0.008 275);
+  --border: oklch(0.91 0.01 275);
+  --fg: oklch(0.22 0.02 275);
+  --fg-muted: oklch(0.5 0.02 275);
+
+  --primary: oklch(0.52 0.2 277);
+  --primary-hover: oklch(0.47 0.2 277);
+  --primary-fg: oklch(0.99 0 0);
+  --primary-soft: oklch(0.95 0.035 277);
+
+  --success: oklch(0.6 0.15 155);
+  --success-soft: oklch(0.95 0.04 155);
+  --warning: oklch(0.72 0.15 75);
+  --warning-soft: oklch(0.96 0.05 85);
+  --danger: oklch(0.58 0.21 25);
+  --danger-soft: oklch(0.95 0.03 25);
+  --info: oklch(0.6 0.13 240);
+  --info-soft: oklch(0.95 0.03 240);
+
+  --ring: oklch(0.52 0.2 277 / 0.45);
+  color-scheme: light;
+}
+
+.dark {
+  --bg: oklch(0.16 0.015 275);
+  --surface: oklch(0.2 0.018 275);
+  --surface-2: oklch(0.245 0.02 275);
+  --border: oklch(0.31 0.02 275);
+  --fg: oklch(0.95 0.008 275);
+  --fg-muted: oklch(0.7 0.02 275);
+
+  --primary: oklch(0.7 0.16 277);
+  --primary-hover: oklch(0.76 0.14 277);
+  --primary-fg: oklch(0.16 0.02 275);
+  --primary-soft: oklch(0.3 0.07 277);
+
+  --success: oklch(0.74 0.15 155);
+  --success-soft: oklch(0.3 0.06 155);
+  --warning: oklch(0.8 0.14 80);
+  --warning-soft: oklch(0.32 0.06 80);
+  --danger: oklch(0.7 0.18 25);
+  --danger-soft: oklch(0.32 0.08 25);
+  --info: oklch(0.74 0.12 240);
+  --info-soft: oklch(0.3 0.06 240);
+
+  --ring: oklch(0.7 0.16 277 / 0.5);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-fg: var(--primary-fg);
+  --color-primary-soft: var(--primary-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-ring: var(--ring);
+}
+
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.04), 0 4px 16px -4px oklch(0 0 0 / 0.08);
+  --shadow-pop: 0 8px 32px -8px oklch(0 0 0 / 0.25);
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+}
+
+@layer base {
+  html {
+    @apply bg-bg text-fg antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  body {
+    @apply min-h-dvh;
+  }
+  /* One consistent, clearly visible focus style for keyboard users. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-bg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
