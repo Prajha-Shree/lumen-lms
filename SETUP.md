@@ -1,8 +1,10 @@
 # Lumen LMS: Complete Setup Guide
 
-This guide covers everything needed to get the project running on a new computer:
+This guide covers everything needed to get the project running on a new computer,
+even one with **nothing installed yet**:
 
-1. [What you need](#1-what-you-need)
+0. [The big picture: which servers run](#0-the-big-picture-which-servers-run)
+1. [What you need](#1-what-you-need) (includes [installing on a brand-new computer](#installing-on-a-brand-new-computer))
 2. [Sharing the project with someone else](#2-sharing-the-project-with-someone-else)
 3. [Run it with Docker (recommended)](#3-run-it-with-docker-recommended)
 4. [First things to try](#4-first-things-to-try)
@@ -17,6 +19,45 @@ This guide covers everything needed to get the project running on a new computer
 > ```
 > Wait for `lms-backend listening`, open **http://localhost:5173**, and click one of the
 > demo accounts on the sign-in page.
+
+---
+
+## 0. The big picture: which servers run
+
+The project is **four servers** that work together. Everything runs on your own
+computer; **no internet hosting or cloud server is needed**.
+
+```
+   You (browser) ──▶ ① frontend  :5173   the website (React)
+                          │
+                          ▼
+                     ② backend   :4000   the main API (Node.js)
+                       │      │
+             ┌─────────┘      └─────────┐
+             ▼                          ▼
+   ③ postgres  :5433            ④ ml-service  :8000
+     the database                 the AI service (Python)
+```
+
+| # | Server | Technology | Port | What it does |
+|---|---|---|---|---|
+| ① | **frontend** | React + Vite | 5173 | The website you open in the browser. Sends every request to the backend. |
+| ② | **backend** | Node.js + Express + Socket.IO | 4000 | The brain: sign-in, institutions, courses, lessons, exams, grading, dashboards, notifications and live updates. Also runs background jobs (daily statistics, deleting old proctoring notes). |
+| ③ | **postgres** | PostgreSQL 16 | 5433 | Stores all data, keeping each institution's data separate. |
+| ④ | **ml-service** | Python + FastAPI + MediaPipe | 8000 | The AI: the adaptive learning-profile quiz, lesson recommendations, and webcam face/attention analysis for proctored exams. |
+
+**Which features need which servers:**
+
+| Feature | Servers needed |
+|---|---|
+| Sign in, courses, lessons, forum, assignments, dashboards | ① + ② + ③ |
+| Learning-profile assessment | ① + ② + ③ + ④ |
+| Personalized recommendations | ① + ② + ③ + ④ (without ④ they fall back to course order) |
+| AI-proctored exam (camera analysis) | ① + ② + ③ + ④ (without ④ only browser signals like tab switching are recorded) |
+
+**With Docker, one command starts all four**, in the right order: database first,
+then AI service, then backend (which sets up the database and loads demo data),
+then the website. **You only ever open the website: http://localhost:5173.**
 
 ---
 
@@ -47,6 +88,63 @@ command. **Nothing else needs to be installed**: no Node.js, no Python, no Postg
 | PostgreSQL | 16. https://www.postgresql.org/download/ |
 
 Option B is more work; see [section 6](#6-run-it-without-docker-alternative).
+
+### Installing on a brand-new computer
+
+Follow the steps for your operating system. When you're done, go to
+[section 2](#2-sharing-the-project-with-someone-else) to get the project, then
+[section 3](#3-run-it-with-docker-recommended) to run it.
+
+#### Windows 10 / 11
+
+1. **Check the basics.** You need 64-bit Windows 10 (version 22H2) or Windows 11.
+   Press `Win + R`, type `winver`, and press Enter to see your version.
+2. **Check virtualization is on.** Open Task Manager (`Ctrl + Shift + Esc`) →
+   **Performance** → **CPU**, and look for **Virtualization: Enabled**.
+   If it says *Disabled*, restart into BIOS/UEFI setup (usually by pressing `F2`, `F10`,
+   `F12` or `Del` at startup), enable **Intel VT-x** / **AMD-V (SVM)**, save and restart.
+3. **Install WSL 2** (Docker needs it). Right-click **Start** → **Terminal (Admin)**
+   or **Windows PowerShell (Admin)**, run:
+   ```powershell
+   wsl --install
+   ```
+   **Restart the computer** when it finishes. (If WSL is already installed, run
+   `wsl --update` instead.)
+4. **Install Docker Desktop.** Download *Docker Desktop for Windows* from
+   https://www.docker.com/products/docker-desktop/ and run the installer. Keep
+   **"Use WSL 2 instead of Hyper-V"** ticked. Restart if asked.
+   (Alternative in an Admin terminal: `winget install -e --id Docker.DockerDesktop`.)
+5. **Open Docker Desktop** from the Start menu. Accept the terms (free for personal
+   and educational use). You can skip signing in. Wait until the bottom-left
+   shows **Engine running**.
+6. **Install Git** (recommended). Download from https://git-scm.com/download/win and
+   install with the default options.
+   (Alternative: `winget install -e --id Git.Git`.)
+7. **Check everything.** Open a *new* PowerShell window:
+   ```powershell
+   docker --version
+   docker compose version
+   git --version
+   ```
+   All three should print a version number.
+
+#### macOS
+
+1. Download **Docker Desktop for Mac** from https://www.docker.com/products/docker-desktop/.
+   Pick **Apple Silicon** (M1/M2/M3/M4) or **Intel chip** (see  → *About This Mac*).
+2. Open the `.dmg`, drag Docker to **Applications**, open it, and allow the permissions
+   it asks for. Wait for **Engine running**.
+3. Install Git: open **Terminal** and run `xcode-select --install`.
+4. Check: `docker --version`, `docker compose version`, `git --version`.
+
+#### Linux (Ubuntu / Debian)
+
+```bash
+sudo apt update && sudo apt install -y git curl
+curl -fsSL https://get.docker.com | sudo sh        # official Docker install script
+sudo usermod -aG docker $USER                      # use docker without sudo
+```
+**Log out and back in**, then check: `docker --version` and `docker compose version`.
 
 ---
 
@@ -223,7 +321,16 @@ docker compose exec frontend npm test
 
 ## 6. Run it without Docker (alternative)
 
-Use this if Docker can't be installed. You'll run three programs in three terminals.
+Use this if Docker can't be installed. You start the four servers yourself:
+
+| Server | How it runs without Docker |
+|---|---|
+| ③ postgres | Installed as a system service; starts automatically with the computer |
+| ② backend | Terminal 1 (step 3) |
+| ④ ml-service | Terminal 2 (step 4) |
+| ① frontend | Terminal 3 (step 5) |
+
+Keep all three terminals open while using the app.
 
 ### Step 1: Install the tools
 Install Node.js 22+, Python 3.11+ and PostgreSQL 16 (see [section 1](#option-b-without-docker)).
