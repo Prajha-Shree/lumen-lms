@@ -16,6 +16,10 @@ engine, privacy-first AI exam proctoring, and live analytics dashboards.
 See [docs/architecture.md](docs/architecture.md) for the design decisions and the
 privacy and compliance notes.
 
+> **New to the project or setting it up on another computer?** Follow the
+> step-by-step **[SETUP.md](SETUP.md)**. It covers requirements, sharing the project,
+> running with or without Docker, and troubleshooting.
+
 ## Quick start (Docker)
 
 Prerequisites: Docker Desktop running.

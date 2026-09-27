@@ -7,8 +7,11 @@ WORKDIR /srv/app
 COPY requirements.txt requirements-cv.txt ./
 RUN pip install -r requirements.txt -r requirements-cv.txt
 # Face model for proctoring (~3.6 MB, Google's official MediaPipe model storage).
+# Non-fatal: behind a firewall the image still builds, and proctoring falls back to
+# browser-only signals (/health reports faceLandmarker: false).
 COPY app ./app
-RUN python -m app.proctoring.download_model
+RUN python -m app.proctoring.download_model \
+    || echo "WARNING: face model download failed; camera analysis disabled until it is downloaded"
 
 FROM base AS dev
 COPY . .
